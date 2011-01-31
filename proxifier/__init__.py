@@ -41,6 +41,7 @@ class WebProxy(object):
     def __init__(self, opener=None):
         self.cookie_jar = CookieJar()
         self.proxy_handlers = []
+        self.proxy_req_handlers = []
         self.local_handlers = []
         self.header_cache = {}
         self.last_headers = {}
@@ -53,13 +54,25 @@ class WebProxy(object):
         """
         Add a handler for proxy requests.
 
-        The provided callable will be invoked with the current WebProxy object,
-        a webob Request object corresponding to the original request, a urllib2
-        Response object with the server's response,
+        The provided callable will be invoked after a request is completed with
+        the current WebProxy object, a webob object corresponding to the
+        original request, a urllib2 Response object containing the server's
+        response, and a decoded version of the response body.
         """
         self.proxy_handlers.append(f)
         return f
 
+    def proxify_request(self, f):
+        """
+        Add a filter for proxy requests.
+
+        The provided callable will be invoked before a request is passed on.
+        It will be invoked with the current WebProxy object and a webob object
+        corresponding to the current request.  Returning False from the handler
+        will cause the request to be discarded.
+        """
+        self.proxy_req_handlers.append(f)
+        
     def add_local_handler(self, f):
         """
         Add a handler for local requests.
@@ -103,6 +116,10 @@ class WebProxy(object):
     def proxy_request(self, req, start_response):
         for cookie in extract_request_cookies(req):
             self.cookie_jar.set_cookie(cookie)
+            
+        for handler in self.proxy_req_handlers:
+            if handler(self, req) == False:
+                return []
         
         req.headers.pop("Proxy-Connection", None)
         url_req = urllib2.Request(req.url, headers=req.headers)
